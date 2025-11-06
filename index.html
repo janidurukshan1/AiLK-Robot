@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AiLK Robot</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background:#f6f7fb; }
+    #chat { max-width: 720px; margin: 0 auto; background:#fff; padding:12px; border-radius:8px; box-shadow:0 6px 20px rgba(0,0,0,.06);}
+    .msg { margin:8px 0; padding:10px; border-radius:8px;}
+    .user{ background:#e6f0ff; text-align:right;}
+    .bot{ background:#f0f0f4; text-align:left;}
+    #input { display:flex; gap:8px; margin-top:12px;}
+    #text { flex:1; padding:10px; border-radius:8px; border:1px solid #ddd;}
+    button { padding:8px 12px; border-radius:8px; cursor:pointer; }
+    .typing { font-style:italic; opacity:.8; }
+  </style>
+</head>
+<body>
+  <div id="chat">
+    <h2>AiLK Robot</h2>
+    <div id="messages"></div>
+
+    <div id="input">
+      <input id="text" placeholder="Say hi to AiLK..." />
+      <button id="send">Send</button>
+    </div>
+  </div>
+
+  <script>
+    const messagesEl = document.getElementById("messages");
+    const textEl = document.getElementById("text");
+    const sendBtn = document.getElementById("send");
+
+    let chatHistory = [
+      {role:"system", content: "You are AiLK Robot — helpful, concise, and fast."}
+    ];
+
+    function appendMessage(role, text) {
+      const div = document.createElement("div");
+      div.className = "msg " + (role === "user" ? "user" : "bot");
+      div.innerText = text;
+      messagesEl.appendChild(div);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
+
+    async function sendMessage() {
+      const text = textEl.value.trim();
+      if (!text) return;
+      appendMessage("user", text);
+      chatHistory.push({role:"user", content: text});
+      textEl.value = "";
+      const typing = document.createElement("div");
+      typing.className = "msg bot typing";
+      typing.innerText = "AiLK is typing...";
+      messagesEl.appendChild(typing);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+
+      try {
+        const resp = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messages: chatHistory })
+        });
+
+        if (!resp.ok) {
+          const t = await resp.text();
+          typing.remove();
+          appendMessage("bot", "Error: " + t);
+          return;
+        }
+
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let assistantText = "";
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          try {
+            const maybe = JSON.parse(chunk);
+            assistantText += maybe;
+          } catch (e) {
+            assistantText += chunk;
+          }
+          typing.innerText = assistantText;
+          messagesEl.scrollTop = messagesEl.scrollHeight;
+        }
+        typing.remove();
+        appendMessage("bot", assistantText.trim());
+        chatHistory.push({role:"assistant", content: assistantText});
+      } catch (err) {
+        typing.remove();
+        appendMessage("bot", "Error: " + err.message);
+      }
+    }
+
+    sendBtn.addEventListener("click", sendMessage);
+    textEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendMessage();
+    });
+  </script>
+</body>
+</html>
